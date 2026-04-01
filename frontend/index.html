@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Miser — Find the Cheapest Price in Europe</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <div class="logo">
+        <span class="logo-icon">🔍</span>
+        <span class="logo-text">Miser</span>
+      </div>
+      <p class="tagline">Find the cheapest price across Europe — for Swiss shoppers</p>
+    </div>
+  </header>
+
+  <main>
+    <!-- Step indicator -->
+    <div class="steps" id="steps">
+      <div class="step active" id="step-dot-1">
+        <div class="step-circle">1</div>
+        <span>Paste URL</span>
+      </div>
+      <div class="step-line"></div>
+      <div class="step" id="step-dot-2">
+        <div class="step-circle">2</div>
+        <span>Confirm Product</span>
+      </div>
+      <div class="step-line"></div>
+      <div class="step" id="step-dot-3">
+        <div class="step-circle">3</div>
+        <span>Compare Prices</span>
+      </div>
+    </div>
+
+    <!-- Step 1: URL Input -->
+    <section class="card" id="section-1">
+      <h2>Paste an Amazon product link</h2>
+      <p class="hint">Works with any Amazon storefront (amazon.com, .de, .co.uk, etc.)</p>
+      <div class="input-row">
+        <input
+          type="url"
+          id="amazon-url"
+          placeholder="https://www.amazon.de/dp/B0CXXXXX"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <button id="btn-extract" class="btn-primary">Extract →</button>
+      </div>
+      <div id="extract-error" class="error-msg hidden"></div>
+    </section>
+
+    <!-- Step 2: Confirm Product -->
+    <section class="card hidden" id="section-2">
+      <h2>Confirm product details</h2>
+      <p class="hint">Edit anything that looks wrong before searching.</p>
+      <div class="product-confirm">
+        <div class="product-image-wrap">
+          <img id="confirm-image" src="" alt="Product image" />
+        </div>
+        <div class="product-fields">
+          <label>
+            Product Title
+            <input type="text" id="field-title" />
+          </label>
+          <label>
+            Brand
+            <input type="text" id="field-brand" />
+          </label>
+          <label>
+            Model / Part Number
+            <input type="text" id="field-model" />
+          </label>
+          <label>
+            Search Query
+            <input type="text" id="field-query" />
+            <small>This is what will be searched across European stores.</small>
+          </label>
+
+          <div class="confirm-options">
+            <label class="checkbox-label">
+              <input type="checkbox" id="opt-amazon" checked />
+              Search Amazon EU marketplaces (DE/FR/IT/ES/NL/SE/PL)
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="opt-geizhals" checked />
+              Search Geizhals (EU price aggregator — AT/DE focus)
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="opt-idealo" checked />
+              Search Idealo (DE/AT/FR/IT/ES/NL price comparison)
+            </label>
+          </div>
+
+          <div class="btn-row">
+            <button id="btn-back" class="btn-secondary">← Back</button>
+            <button id="btn-compare" class="btn-primary">Find Cheapest Price 🛒</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Step 3: Results -->
+    <section class="card hidden" id="section-3">
+      <div class="results-header">
+        <div>
+          <h2>Price Comparison Results</h2>
+          <p id="results-summary" class="hint"></p>
+        </div>
+        <button id="btn-new-search" class="btn-secondary">New Search</button>
+      </div>
+
+      <div id="loading-results" class="loading-wrap">
+        <div class="spinner"></div>
+        <p>Searching European stores… this may take 20–40 seconds.</p>
+        <p class="hint">We're checking Amazon DE, FR, IT, ES, NL, Geizhals, and more.</p>
+      </div>
+
+      <div id="results-error" class="error-msg hidden"></div>
+
+      <!-- VAT info banner -->
+      <div class="vat-banner hidden" id="vat-banner">
+        <strong>💡 About EU prices:</strong>
+        All prices include local VAT. As a Swiss buyer, you may save on import duties
+        for orders under CHF 65. Shipping costs to Switzerland are not included.
+      </div>
+
+      <div id="results-list" class="results-list"></div>
+    </section>
+  </main>
+
+  <footer>
+    <p>Prices include local VAT. Miser is a personal tool — always verify final checkout prices before ordering.</p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

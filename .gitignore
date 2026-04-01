@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyc
+.venv/
+venv/
+.env
+
+# Playwright browser downloads
+ms-playwright/
+
+# OS
+.DS_Store
+Thumbs.db
+*/pycache*
