@@ -25,13 +25,20 @@ fi
 # Create venv if needed
 if [ ! -d ".venv" ]; then
   echo "-> Creating virtual environment..."
-  python3 -m venv .venv
+  if ! python3 -m venv .venv; then
+    echo "ERROR: Failed to create virtual environment."
+    echo "  On Ubuntu/WSL try:  sudo apt install python3-full"
+    exit 1
+  fi
 fi
 
-# Verify activate script exists (venv creation can silently fail)
+# Verify activate script exists
 if [ ! -f ".venv/bin/activate" ]; then
-  echo "ERROR: Virtual environment was not created properly."
-  echo "  Try:  sudo apt install python3-venv && rm -rf .venv && ./start.sh"
+  echo "ERROR: Virtual environment is incomplete (no activate script)."
+  echo "  Python version: $(python3 --version)"
+  echo "  On Ubuntu/WSL try:"
+  echo "    sudo apt install python3-full"
+  echo "    rm -rf .venv && ./start.sh"
   exit 1
 fi
 
