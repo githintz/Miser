@@ -25,12 +25,28 @@ def _extract_asin(url: str) -> Optional[str]:
     return match.group(1) if match else None
 
 
-def _normalize_amazon_url(url: str) -> str:
-    """Return a clean amazon.com URL for the ASIN so we always get English content."""
+def _extract_domain(url: str) -> str:
+    """Extract the amazon domain from the URL (e.g. 'www.amazon.de')."""
+    m = re.search(r"((?:www\.)?amazon\.[a-z.]+)", url)
+    return m.group(1) if m else "www.amazon.com"
+
+
+def _clean_url(url: str) -> str:
+    """Return a minimal /dp/ASIN URL on the original Amazon domain."""
     asin = _extract_asin(url)
+    domain = _extract_domain(url)
     if asin:
-        return f"https://www.amazon.com/dp/{asin}"
+        return f"https://{domain}/dp/{asin}"
     return url
+
+
+# Fallback domains to try if the original returns 404/block
+_FALLBACK_DOMAINS = [
+    "www.amazon.de",
+    "www.amazon.fr",
+    "www.amazon.co.uk",
+    "www.amazon.com",
+]
 
 
 async def extract_product(url: str) -> dict:
@@ -39,12 +55,24 @@ async def extract_product(url: str) -> dict:
     Returns dict with keys: title, brand, model, asin, image_url, price, currency, source_url
     """
     asin = _extract_asin(url)
-    fetch_url = _normalize_amazon_url(url)
+    original_domain = _extract_domain(url)
+    # Build ordered list of URLs to try: original domain first, then fallbacks
+    domains_to_try = [original_domain] + [d for d in _FALLBACK_DOMAINS if d != original_domain]
+    urls_to_try = [f"https://{d}/dp/{asin}" for d in domains_to_try] if asin else [url]
 
+    html = None
     async with httpx.AsyncClient(headers=HEADERS, follow_redirects=True, timeout=20) as client:
-        resp = await client.get(fetch_url)
-        resp.raise_for_status()
-        html = resp.text
+        for fetch_url in urls_to_try:
+            try:
+                resp = await client.get(fetch_url)
+                if resp.status_code == 200:
+                    html = resp.text
+                    break
+            except Exception:
+                continue
+
+    if not html:
+        raise RuntimeError(f"Could not fetch product page from any Amazon domain for ASIN {asin}")
 
     soup = BeautifulSoup(html, "lxml")
 
