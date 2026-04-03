@@ -161,25 +161,42 @@ async def _search_by_query(
 
 async def search(query: str, asin: Optional[str] = None) -> list[dict]:
     """
-    Search all Amazon EU marketplaces. Prefers ASIN lookup when available,
-    falls back to keyword search.
+    Search all Amazon EU marketplaces.
+    If an ASIN is provided, tries direct ASIN lookup first on every marketplace.
+    For any marketplace where ASIN lookup returns nothing, falls back to keyword search.
+    This handles US ASINs that may not exist on all EU stores.
     """
     results = []
     async with httpx.AsyncClient(headers=HEADERS, follow_redirects=True) as client:
-        tasks = []
-        for country, flag, country_name, base_url, currency, vat in MARKETPLACES:
-            if asin:
-                tasks.append(
-                    _fetch_by_asin(client, country, flag, country_name, base_url, currency, vat, asin)
-                )
-            else:
-                tasks.append(
-                    _search_by_query(client, country, flag, country_name, base_url, currency, vat, query)
-                )
+        # Step 1: ASIN lookup across all marketplaces (if ASIN available)
+        if asin:
+            asin_tasks = [
+                _fetch_by_asin(client, country, flag, country_name, base_url, currency, vat, asin)
+                for country, flag, country_name, base_url, currency, vat in MARKETPLACES
+            ]
+            asin_results = await asyncio.gather(*asin_tasks, return_exceptions=True)
+            found_countries = set()
+            for r in asin_results:
+                if isinstance(r, dict):
+                    results.append(r)
+                    found_countries.add(r["country"])
+        else:
+            found_countries = set()
 
-        completed = await asyncio.gather(*tasks, return_exceptions=True)
-        for r in completed:
-            if isinstance(r, dict):
-                results.append(r)
+        # Step 2: Keyword search for any marketplace that didn't return an ASIN hit
+        remaining = [
+            (country, flag, country_name, base_url, currency, vat)
+            for country, flag, country_name, base_url, currency, vat in MARKETPLACES
+            if country not in found_countries
+        ]
+        if remaining:
+            query_tasks = [
+                _search_by_query(client, country, flag, country_name, base_url, currency, vat, query)
+                for country, flag, country_name, base_url, currency, vat in remaining
+            ]
+            query_results = await asyncio.gather(*query_tasks, return_exceptions=True)
+            for r in query_results:
+                if isinstance(r, dict):
+                    results.append(r)
 
     return results

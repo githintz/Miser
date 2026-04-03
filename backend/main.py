@@ -102,28 +102,33 @@ async def compare_prices(req: CompareRequest):
         raise HTTPException(status_code=400, detail="Product search query is required.")
 
     asin = req.product.asin
-    tasks = []
+    named_tasks = []
 
     if req.include_amazon_eu:
-        tasks.append(amazon_eu.search(query=query, asin=asin))
-
+        named_tasks.append(("Amazon EU", amazon_eu.search(query=query, asin=asin)))
     if req.include_geizhals:
-        tasks.append(geizhals.search(query=query))
-
+        named_tasks.append(("Geizhals", geizhals.search(query=query)))
     if req.include_idealo:
-        tasks.append(idealo.search(query=query))
+        named_tasks.append(("Idealo", idealo.search(query=query)))
+
+    names = [n for n, _ in named_tasks]
+    coros = [c for _, c in named_tasks]
 
     # Run all scrapers in parallel
-    all_results_nested = await asyncio.gather(*tasks, return_exceptions=True)
+    all_results_nested = await asyncio.gather(*coros, return_exceptions=True)
 
     results = []
     errors = []
-    for r in all_results_nested:
+    source_counts = {}
+    for name, r in zip(names, all_results_nested):
         if isinstance(r, list):
             results.extend(r)
+            source_counts[name] = len(r)
+            logger.info("%s returned %d results", name, len(r))
         elif isinstance(r, Exception):
-            errors.append(str(r))
-            logger.warning("Scraper error: %s", r)
+            errors.append(f"{name}: {r}")
+            source_counts[name] = 0
+            logger.warning("Scraper error (%s): %s", name, r)
 
     # Deduplicate by (retailer, price) and clean up
     seen = set()
@@ -141,6 +146,7 @@ async def compare_prices(req: CompareRequest):
         "query": query,
         "total": len(unique),
         "results": unique,
+        "source_counts": source_counts,
         "errors": errors,
     }
 

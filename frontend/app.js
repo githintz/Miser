@@ -169,14 +169,23 @@ async function handleCompare() {
 
 // ── Render results ────────────────────────────────────────────────────────────
 function renderResults(data) {
-  const { results, query, total } = data;
+  const { results, query, total, source_counts } = data;
 
   if (!results || results.length === 0) {
-    resultsSummary.textContent = `No results found for "${query}". Try editing the search query.`;
+    const sourceSummary = source_counts
+      ? Object.entries(source_counts).map(([k, v]) => `${k}: ${v}`).join(", ")
+      : "no sources returned data";
+    resultsSummary.innerHTML =
+      `No results found for <strong>"${escHtml(query)}"</strong>.<br>` +
+      `Sources checked: ${sourceSummary}.<br>` +
+      `Try going back and shortening the search query to just the brand and model number.`;
     return;
   }
 
-  resultsSummary.textContent = `Found ${total} offer${total !== 1 ? "s" : ""} for "${query}" — sorted cheapest first`;
+  const sourceSummary = source_counts
+    ? " (" + Object.entries(source_counts).filter(([,v]) => v > 0).map(([k, v]) => `${k}: ${v}`).join(", ") + ")"
+    : "";
+  resultsSummary.textContent = `Found ${total} offer${total !== 1 ? "s" : ""} for "${query}"${sourceSummary} — sorted cheapest first`;
   vatBanner.classList.remove("hidden");
 
   results.forEach((item, i) => {

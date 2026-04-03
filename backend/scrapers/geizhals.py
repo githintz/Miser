@@ -1,7 +1,7 @@
 """
 Search geizhals.eu for a product.
 Geizhals is an Austrian price-comparison site covering AT, DE, and EU retailers.
-Uses httpx + BeautifulSoup — no browser required.
+Uses httpx + BeautifulSoup. Falls back gracefully when JS-rendered content is missing.
 """
 
 import re
@@ -48,7 +48,6 @@ def _parse_price(text: str) -> Optional[float]:
     if not text:
         return None
     cleaned = re.sub(r"[€\s\xa0\u202f]", "", text)
-    # European format: 1.234,56
     if re.search(r"\d\.\d{3},\d{2}", cleaned):
         cleaned = cleaned.replace(".", "").replace(",", ".")
     elif "," in cleaned and "." not in cleaned:
@@ -77,28 +76,46 @@ def _detect_country(retailer: str, url: str) -> str:
     return "DE"
 
 
-async def _get_product_url(client: httpx.AsyncClient, query: str) -> Optional[str]:
-    """Search geizhals and return the URL of the best-matching product page."""
-    search_url = f"https://geizhals.eu/?fs={query.replace(' ', '+')}&in=eu"
-    try:
-        resp = await client.get(search_url, timeout=15)
-        if resp.status_code != 200:
-            return None
-        soup = BeautifulSoup(resp.text, "lxml")
+async def _find_product_url(client: httpx.AsyncClient, query: str) -> Optional[str]:
+    """
+    Search geizhals.eu and return the URL of the best-matching product page.
+    Geizhals redirects directly to a product page when the match is unambiguous.
+    """
+    # Try EU-wide search
+    for search_url in [
+        f"https://geizhals.eu/?fs={query.replace(' ', '+')}&in=eu",
+        f"https://geizhals.eu/?fs={query.replace(' ', '+')}&cat=WK",
+    ]:
+        try:
+            resp = await client.get(search_url, timeout=15)
+            if resp.status_code != 200:
+                continue
 
-        # If geizhals redirects directly to a product page
-        if "/preisvergleich/" in str(resp.url) or "/pv" in str(resp.url):
-            return str(resp.url)
+            final_url = str(resp.url)
+            soup = BeautifulSoup(resp.text, "lxml")
 
-        # Otherwise find first product link in search results
-        for a in soup.select("a[href*='/preisvergleich/'], a[href*='/?a=']"):
-            href = a.get("href", "")
-            if href.startswith("/"):
-                return "https://geizhals.eu" + href
-            if href.startswith("https://geizhals"):
-                return href
-    except Exception:
-        pass
+            # If we landed directly on a product/pricelist page
+            if "/?a=" in final_url or "/pricelist" in final_url:
+                return final_url
+
+            # Look for product links in the search result list
+            for a in soup.select("a[href*='/?a=']"):
+                href = a.get("href", "")
+                if href.startswith("/"):
+                    return "https://geizhals.eu" + href
+                if "geizhals" in href:
+                    return href
+
+            # Broader fallback: any internal product link
+            for a in soup.select("a[href]"):
+                href = a.get("href", "")
+                if re.search(r"/\?a=\d+", href):
+                    if href.startswith("/"):
+                        return "https://geizhals.eu" + href
+                    return href
+
+        except Exception:
+            continue
     return None
 
 
@@ -111,39 +128,43 @@ async def _scrape_offers(client: httpx.AsyncClient, product_url: str, max_result
             return results
         soup = BeautifulSoup(resp.text, "lxml")
 
-        # Geizhals offer rows — multiple possible selectors across their page versions
+        # Geizhals embeds offer data in multiple possible structures.
+        # Try all known selectors for offer rows.
         offer_rows = (
-            soup.select(".offerlist-item")
-            or soup.select("tr.offer")
-            or soup.select("[class*='offer-list'] li")
-            or soup.select("table.offers tbody tr")
+            soup.select("tr.offer")
+            or soup.select(".offerlist-item")
+            or soup.select("tr[id^='offer']")
+            or soup.select("table.PVT tr")
+            or soup.select("li.offer")
         )
 
         for row in offer_rows[:max_results]:
             try:
-                # Retailer name
+                # Retailer
                 retailer_el = (
-                    row.select_one(".merchant-name")
+                    row.select_one("td.merchant a")
+                    or row.select_one(".merchant a")
+                    or row.select_one("a.merchant-name")
                     or row.select_one(".shop a")
-                    or row.select_one("a[class*='merchant']")
-                    or row.select_one("td.merchant")
+                    or row.select_one("td:first-child a")
                 )
                 retailer = retailer_el.get_text(strip=True) if retailer_el else None
 
-                # Price
+                # Price — look for the canonical price cell
                 price_el = (
-                    row.select_one(".price")
-                    or row.select_one("[class*='preis']")
-                    or row.select_one("td.price")
-                    or row.select_one("[class*='price-amount']")
+                    row.select_one("td.price")
+                    or row.select_one(".price span")
+                    or row.select_one("td.preis")
+                    or row.select_one("[class*='price']")
                 )
                 price_text = price_el.get_text(strip=True) if price_el else None
                 price = _parse_price(price_text) if price_text else None
 
-                # Link to offer
+                # Offer link
                 link_el = (
-                    row.select_one("a[href*='goto'], a[href*='merchant']")
-                    or row.select_one("a.merchant-name")
+                    row.select_one("a[href*='goto']")
+                    or row.select_one("a[href*='merchant']")
+                    or retailer_el
                 )
                 href = link_el.get("href") if link_el else None
                 offer_url = ("https://geizhals.eu" + href) if href and href.startswith("/") else href
@@ -174,7 +195,7 @@ async def _scrape_offers(client: httpx.AsyncClient, product_url: str, max_result
 
 async def search(query: str, max_results: int = 20) -> list[dict]:
     async with httpx.AsyncClient(headers=HEADERS, follow_redirects=True) as client:
-        product_url = await _get_product_url(client, query)
+        product_url = await _find_product_url(client, query)
         if not product_url:
             return []
         return await _scrape_offers(client, product_url, max_results)
